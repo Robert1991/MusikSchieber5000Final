@@ -1,0 +1,309 @@
+package ms5000.gui.mainframe.center.eventhandler;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+import org.jaudiotagger.tag.datatype.Artwork;
+
+import javafx.event.ActionEvent;
+import javafx.event.EventHandler;
+import javafx.scene.control.TextField;
+import ms5000.gui.alert.ErrorAlert;
+import ms5000.gui.mainframe.Main_Frame;
+import ms5000.gui.mainframe.center.CenterGridPane;
+import ms5000.gui.mainframe.center.CenterGridPane.FieldKey;
+import ms5000.gui.mainframe.center.CenterTable;
+import ms5000.musicfile.tag.TagUtils;
+import ms5000.properties.PropertiesUtils;
+
+/**
+ * This class implements the main functionality of the button for saving the tag
+ * which is located in the grid pane on the right hand side of the frame
+ */
+public class CenterGridPane_ButtonSave_EventHandler implements EventHandler<ActionEvent> {
+	
+	/**
+	 * The error strings
+	 */
+	private final String ERROR_NUMBERFORMAT_EXCEPTION = PropertiesUtils.getString("center.section.text.error.dialog.number.format");
+	private final String ERROR_UNREALISTIC_NUMBERS = PropertiesUtils.getString("center.section.text.error.dialog.unrealistic.number");
+	private final String ERROR_TITLENUMBER = PropertiesUtils.getString("center.section.text.error.dialog.titlenumber.to.large");
+	private final String ERROR_DISCNUMBER = PropertiesUtils.getString("center.section.text.error.dialog.discnumber.to.large");
+	private final String ERROR_DISCNUMBER_TITLENUMBER = PropertiesUtils.getString("center.section.text.error.dialog.check.title.disc.number");
+	
+	/**
+	 * Handle the event when the buttons is pressed
+	 */
+	@Override
+	public void handle(ActionEvent event) {
+		CenterTable centerTable = Main_Frame.getBorderPane_Center().getCentertable();
+		CenterGridPane centerGrid = Main_Frame.getBorderPane_Center().getCenterGridPane();
+		
+		// Checking whether a row is selected
+		if (event.getEventType()== ActionEvent.ACTION
+				&& centerTable.getSelectionModel().getSelectedIndices().size() > 0) {
+			try {
+				boolean discNumberOk = true;
+				boolean titleNumberOk = true;
+				
+				int discNumber;
+				int totalDiscs;
+				// Checking whether the numeric entries are valid
+				try {
+					discNumber = parseInteger(((TextField) centerGrid.getField(FieldKey.DISCNUMBER)).getText());
+					totalDiscs = parseInteger(((TextField) centerGrid.getField(FieldKey.DISCNUMBER_TOTAL)).getText());
+				} catch (Exception e) {
+					discNumber = 1;
+					totalDiscs = 1;
+				}
+				
+				
+				int totalTitles = parseInteger(((TextField) centerGrid.getField(FieldKey.TITLENUMBER_TOTAL)).getText());
+				int titelNumber = parseInteger(((TextField) centerGrid.getField(FieldKey.TITLENUMBER)).getText());
+				int year = parseInteger((((TextField) centerGrid.getField(FieldKey.YEAR)).getText()));
+				
+				if (totalDiscs < discNumber) {
+					if ((totalDiscs != 0 && discNumber == 0) || (totalDiscs == 0 && discNumber != 0)) {
+						discNumberOk = false;
+					}
+				}
+
+				if (titelNumber > totalTitles) {
+					if((totalTitles != 0 && titelNumber == 0) && (totalTitles == 0 && titelNumber != 0)) {
+						titleNumberOk = false;
+					}
+				}
+				
+				// Calling different methods when one or more entries are selected
+				if (checkNumbers(discNumber, totalDiscs, totalTitles, titelNumber, year) && discNumberOk && titleNumberOk) {
+					if (centerTable.getSelectionModel().getSelectedIndices().size() == 1) {
+						setEntriesSingle(centerTable, centerGrid, discNumber, totalDiscs, totalTitles, titelNumber,year);
+						Main_Frame.getBorderPane_Center().getCenterGridPane().setTextFieldColorProfile();
+					} else if (centerTable.getSelectionModel().getSelectedIndices().size() > 1) {
+						setEntriesMultiple(centerTable, centerGrid, discNumber, totalTitles, totalDiscs, year);
+					}
+				// Error dialogs 	
+				} else if (!discNumberOk && !titleNumberOk) {
+					openErrorDialog(ERROR_DISCNUMBER_TITLENUMBER);
+				} else if (!discNumberOk) {
+					openErrorDialog(ERROR_DISCNUMBER);
+				} else if (!titleNumberOk) {
+					openErrorDialog(ERROR_TITLENUMBER);
+				} else {
+					openErrorDialog(ERROR_UNREALISTIC_NUMBERS);
+				}
+
+			} catch (NumberFormatException e) {
+				openErrorDialog(ERROR_NUMBERFORMAT_EXCEPTION);
+			}
+
+		}
+	}
+	
+	/**
+	 * Method for saving the tags when multiple entries are selected
+	 * 
+	 * @param centerTable an instance of the center table to access the tag instances
+	 * @param centerGrid an instance of the center grid to access the values of the text fields
+	 * @param discNumber the checked disc number 
+	 * @param totalTitles the checked total title number
+	 * @param totalDiscs the checked total disc number
+	 * @param year the checked album year
+	 */
+	private void setEntriesMultiple(CenterTable centerTable, CenterGridPane centerGrid, int discNumber, int totalTitles,
+			int totalDiscs, int year) {
+		
+		String artist = centerGrid.getArtistComboBox().getEditor().getText();
+		String album = centerGrid.getAlbumComboBox().getEditor().getText();
+		String albumArtist = ((TextField)centerGrid.getField(FieldKey.ALBUM_ARTIST)).getText();
+		String comment = centerGrid.getCommentComboBox().getEditor().getText();
+		String composer = ((TextField)centerGrid.getField(FieldKey.COMPOSER)).getText();
+		String genre = centerGrid.getGenreComboBox().getEditor().getText();
+		Artwork artwork = centerGrid.getArtwork();
+		String coverArtUrl = centerGrid.getAlbumComboBox().getSelectionModel().getSelectedItem().getCoverArtImageUrl();
+		
+		
+		// Receiving the original state to determine which field has changed
+		OriginalState state = OriginalState.getInstance();
+		
+		// Iterating through the entries
+		// If an field was changed, it is getting stored in all instances
+		for(Integer position : centerTable.getSelectionModel().getSelectedIndices()) {
+			// Writing the entries
+			if (!state.getArtist().equals(artist)) {
+				centerTable.getItems().get(position.intValue()).setArtist(artist);
+			}
+			
+			if (!state.getAlbum().equals(album)) {
+				centerTable.getItems().get(position.intValue()).setAlbum(album);
+				centerTable.getItems().get(position.intValue()).getRelease().setTitle(album);
+			}
+			
+			if (!state.getAlbum_artist().equals(albumArtist)) {
+				centerTable.getItems().get(position.intValue()).getRelease().setAlbumArtist(albumArtist);
+			}
+			
+			if (!state.getComment().equals(comment)) {
+				centerTable.getItems().get(position.intValue()).setComment(comment);
+			}
+			
+			if (!state.getComposer().equals(composer)) {
+				centerTable.getItems().get(position.intValue()).getRelease().setComposer(composer);
+			}
+			
+			if (!state.getDiscNumber().equals("" + discNumber)) {
+				centerTable.getItems().get(position.intValue()).getRelease().setDiscNumber("" + discNumber);	
+			}
+			
+			if (!state.getGenre().equals(genre)) {
+				centerTable.getItems().get(position.intValue()).setGenre(genre);
+			}
+			
+			if (!state.getTotalDiscNumber().equals("" + totalDiscs)) {
+				centerTable.getItems().get(position.intValue()).getRelease().setDiscCount("" + totalDiscs);
+			}
+			
+			if (!state.getTitlesTotal().equals("" + totalTitles)) {
+				centerTable.getItems().get(position.intValue()).getRelease().setTrackCount("" + totalTitles);
+			}
+			
+			if(!state.getYear().equals("" + year)) {
+				centerTable.getItems().get(position.intValue()).getRelease().setYear("" + year);
+			}
+			
+			if(artwork != null) {
+				centerTable.getItems().get(position.intValue()).getRelease().setArtwork(artwork);
+				centerTable.getItems().get(position.intValue()).getRelease().setCoverArtImageUrl(coverArtUrl);
+			}
+			
+			// determine new tag state
+			TagUtils.determineTagState(centerTable.getItems().get(position.intValue())); 
+		}
+		
+		// Refreshing the table
+		centerTable.refresh();
+	}
+	
+	/**
+	 * Method to store the tag when only one entry is chosen
+	 * 
+	 * @param centerTable an instance of the center table to access the tag instances
+	 * @param centerGrid an instance of the center grid to access the values of the text fields
+	 * @param discNumber the checked disc number 
+	 * @param totalTitles the checked total title number
+	 * @param totalDiscs the checked total disc number
+	 * @param year the checked album year
+	 * @param titlenumber the checked title number
+	 */
+	private void setEntriesSingle(CenterTable centerTable, CenterGridPane centerGrid, int discNumber, int totalDiscs,
+			int totalTitles, int titelNumber, int year) {
+		// Writing the entries
+		centerTable.getSelectionModel().getSelectedItem().getRelease().setAlbumArtist(centerGrid.getAlbumArtistTextField().getText());
+		centerTable.getSelectionModel().getSelectedItem().getRelease().setTrackNumber("" +titelNumber);
+		centerTable.getSelectionModel().getSelectedItem().getRelease().setTrackCount("" + totalTitles);
+		centerTable.getSelectionModel().getSelectedItem().getRelease().setYear("" + year);
+		centerTable.getSelectionModel().getSelectedItem().getRelease().setTitle(centerGrid.getAlbumComboBox().getEditor().getText());
+		centerTable.getSelectionModel().getSelectedItem().setArtist(centerGrid.getArtistComboBox().getEditor().getText());
+		centerTable.getSelectionModel().getSelectedItem().setComment(centerGrid.getCommentComboBox().getEditor().getText());
+		centerTable.getSelectionModel().getSelectedItem().getRelease().setComposer(centerGrid.getComposerTextField().getText());
+		centerTable.getSelectionModel().getSelectedItem().getRelease().setDiscNumber("" + discNumber);
+		centerTable.getSelectionModel().getSelectedItem().getRelease().setDiscCount("" + totalDiscs);
+		centerTable.getSelectionModel().getSelectedItem().getRelease().setCoverArtImageUrl(
+				centerGrid.getAlbumComboBox().getSelectionModel().getSelectedItem().getCoverArtImageUrl());
+		centerTable.getSelectionModel().getSelectedItem().setGenre(centerGrid.getGenreComboBox().getEditor().getText());
+		centerTable.getSelectionModel().getSelectedItem().setTitlename(centerGrid.getTitlenameComboBox().getEditor().getText());
+		centerTable.getSelectionModel().getSelectedItem().setAlbum(centerGrid.getAlbumComboBox().getEditor().getText());
+		
+		if (centerGrid.getAlbumComboBox().getSelectionModel().getSelectedItem() != null) {
+			if (centerGrid.getAlbumComboBox().getSelectionModel().getSelectedItem().getArtwork() != null){
+				centerTable.getSelectionModel().getSelectedItem().getRelease()
+				.setArtwork(centerGrid.getAlbumComboBox().getSelectionModel().getSelectedItem().getArtwork());
+				centerTable.getSelectionModel().getSelectedItem().getRelease()
+				.setCoverArtImageUrl(centerGrid.getAlbumComboBox().getSelectionModel().getSelectedItem().getCoverArtImageUrl());;
+			}
+		}
+		
+		// determine new tag state
+		TagUtils.determineTagState(centerTable.getSelectionModel().getSelectedItem()); 
+		
+		// Refreshing the table
+		centerTable.refresh();
+		
+		// Refreshing the detail view
+		Main_Frame.getBorderPane_Center().getCenterGridPane().refershFieldColorProfile();
+	}
+	
+	/**
+	 * Method for opening the error dialog 
+	 * 
+	 * @param dialogText the error message which is displayed to the user
+	 */
+	private void openErrorDialog(String dialogText) {
+		new ErrorAlert(PropertiesUtils.getString("center.section.text.error.dialog.title"),
+				PropertiesUtils.getString("center.section.text.error.dialog.header"), dialogText).showDialog();
+	}
+	
+	/**
+	 * Method for checking whether the numeric tag entries have valid values
+	 * 
+	 * @param discNumber
+	 * @param totalDiscs
+	 * @param totalTitles
+	 * @param titleNumber
+	 * @param year
+	 * 
+	 * @return boolean which indicates whether the numeric entries are valid 
+	 */
+	private boolean checkNumbers(int discNumber, int totalDiscs, int totalTitles, int titleNumber, int year) {
+		if (discNumber > 50 || discNumber < 0) {
+			return false;
+		}
+		
+		if (totalDiscs > 50 || totalDiscs < 0) {
+			return false;
+		}
+		
+		if (totalTitles > 100 || totalTitles < 0) {
+			return false;
+		}
+		
+		if (titleNumber > 100 || titleNumber < 0) {
+			return false;
+		}
+		
+		if(year < 1600 || year > getCurrentYear()) {
+			if(!(year == 0)) {
+				return false;	
+			}
+		}
+		
+		return true;
+	}
+	
+	/**
+	 * Returns the current year as string for checking the validity of year field
+	 * 
+	 * @return the current year as string
+	 */
+	private int getCurrentYear() {
+	    SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy");
+	    Date now = new Date();
+	    String strDate = sdfDate.format(now);
+	    return Integer.parseInt(strDate);
+	}
+	
+	/**
+	 * Method for parsing an string to an integer
+	 * 
+	 * @param number the integer
+	 * @return the string as integer
+	 * @throws NumberFormatException gets thrown, if false entries are entered
+	 */
+	private int parseInteger(String number) throws NumberFormatException{
+		if (number.equals("")) {
+			return 0;
+		} else {
+			return Integer.parseInt(number);
+		}
+	}
+}
